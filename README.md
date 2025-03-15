@@ -42,19 +42,20 @@ They should implement the `Converter` class in `custom_converters/converter.py`
 ## Command-line Arguments
 The script provides several optional arguments to fine-tune the execution:
 
-| Argument | Description | Default |
-|----------|-------------|---------|
-| `-f, --fields_to_ignore` | Fields to ignore when evaluating outputs. | `["FirstNameShortestDiminutives", "Id", "ClientId", "TransliteratedName"]` |
-| `-m, --model` | Model to use (`GPT` or `Gemini`). | `Gemini` |
-| `-w, --weights` | Dictionary of fields to assign higher weight during evaluation. | `{ "FamilyName": 2, "FirstName": 2, "FamilyNamePrefixesRemoved": 1.5, "OtherGivenNames": 1.5 }` |
-| `-d, --problem_definition` | Name of the problem definition file. | **Required** |
-| `-i, --input_data` | Name of the input data file. | **Required** |
-| `-o, --output_data` | Name of the expected output data file. | **Required** |
-| `-c, --categories` | Dictionary of search space categories and values. | Default Categories (see below) |
-| `-t, --train_num` | Number of examples used for training. | `600` |
-| `-n, --num_rounds` | Number of iterations. | `30` |
-| `--input_converter` | Name of the input converter class file. | `person_parse_input_converter` |
-| `--output_converter` | Name of the output converter class file. | `person_parse_converter` |
+| Argument                   | Description | Default                                                                                         |
+|----------------------------|-------------|-------------------------------------------------------------------------------------------------|
+| `-f, --fields_to_ignore`   | Fields to ignore when evaluating outputs. | `["FirstNameShortestDiminutives", "Id", "ClientId", "TransliteratedName"]`                      |
+| `-m, --model`              | Model to use (`GPT` or `Gemini`). | `Gemini`                                                                                        |
+| `-w, --weights`            | Dictionary of fields to assign higher weight during evaluation. | `{ "FamilyName": 2, "FirstName": 2, "FamilyNamePrefixesRemoved": 1.5, "OtherGivenNames": 1.5 }` |
+| `-d, --problem_definition` | Name of the problem definition file. | **Required**                                                                                    |
+| `-i, --input_data`         | Name of the input data file. | **Required**                                                                                    |
+| `-o, --output_data`        | Name of the expected output data file. | **Required**                                                                                    |
+| `-c, --categories`         | Dictionary of search space categories and values. | Default Categories (see below)                                                                  |
+| `-t, --train_num`          | Number of examples used for training. | `600`                                                                                           |
+| `-n, --num_rounds`         | Number of iterations. | `30`                                                                                            |
+| `-s, --min_spaces`         | Minimum number of search spaces which should have solutions, a larger number means a wider range of solutions. | `10`                                                                                            |
+| `--input_converter`        | Name of the input converter class file. | `person_parse_input_converter`                                                                  |
+| `--output_converter`       | Name of the output converter class file. | `person_parse_converter`                                                                        |
 
 ## Default Categories
 The tuner explores various prompt variations based on the following default categories:

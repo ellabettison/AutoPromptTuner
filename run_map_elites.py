@@ -77,7 +77,7 @@ def parse_args_and_run_map_elites():
     parser.add_argument("-c", "--categories", type=parse_dict, help="Dictionary of search space categories and values, e.g. {\"Specification Detail\": [\"Simple\", \"Medium\", \"Extremely Detailed\"]}", default=json.dumps(default_categories))
     parser.add_argument("-t", "--train_num", type=int, help="Number of examples to use for training, e.g. 600", default=600)
     parser.add_argument("-n", "--num_rounds", type=int, help="Number of rounds to iterate for", default=30)
-    parser.add_argument("-m", "--min_spaces", type=int, help="Minimum number of search spaces which should have solutions, a larger number means a wider range of solutions", default=10)
+    parser.add_argument("-s", "--min_spaces", type=int, help="Minimum number of search spaces which should have solutions, a larger number means a wider range of solutions", default=10)
     parser.add_argument("--input_converter", type=str, help="Name of input converter class file", default="person_parse_input_converter")
     parser.add_argument("--output_converter", type=str, help="Name of output converter class file", default="person_parse_converter")
 
@@ -117,7 +117,7 @@ def parse_args_and_run_map_elites():
         input_converter = load_class_from_file(input_converter_file, to_camel_case(args.input_converter))
 
     prompt_tester = PromptTesterObjectSimilarity(model_caller, input_data, output_data, Evaluator(fields_to_ignore, fields_higher_weightings), output_converter(), input_converter(), train_split=train_split)
-    run_map_elites(GeminiCaller(), prompt_tester, problem_definition, combinations, num_rounds, min_spaces_with_solutions)
+    run_map_elites(model_caller, prompt_tester, problem_definition, combinations, num_rounds, min_spaces_with_solutions)
 
 
 if __name__ == '__main__':
