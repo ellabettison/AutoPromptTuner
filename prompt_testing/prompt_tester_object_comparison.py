@@ -12,9 +12,11 @@ class Evaluator:
     def __init__(self, fields_to_ignore: list[str], fields_weightings: dict[str, float]):
         self.fields_to_ignore = fields_to_ignore
         self.fields_weightings = fields_weightings
-    def get_score_for_object(self, actual_output: dict, expected_output: dict) -> tuple[float, dict]:
+
+    def get_score_for_object(self, actual_output: dict, expected_output: dict) -> tuple[float, dict, dict]:
         total_penalty = 0.0
         field_scores = {}
+        list_field_metrics = {}
 
         all_keys = set(actual_output.keys()).union(set(expected_output.keys()))
         total_fields = len(all_keys)
@@ -25,20 +27,19 @@ class Evaluator:
             actual_value = actual_output.get(key)
             expected_value = expected_output.get(key)
 
-            penalty = self.get_field_penalty(actual_value, expected_value)
-            field_scores[key] = max(0.0, 1.0 - penalty)
-            
-            if key in self.fields_weightings:
-                penalty *= self.fields_weightings[key]
-            
-            total_penalty += penalty
+            if isinstance(actual_value, list) and isinstance(expected_value, list):
+                metrics = self.compare_lists(actual_value, expected_value)
+                list_field_metrics[key] = metrics
+            else:
+                penalty = self.get_field_penalty(actual_value, expected_value)
+                field_scores[key] = max(0.0, 1.0 - penalty)
+
+                if key in self.fields_weightings:
+                    penalty *= self.fields_weightings[key]
+                total_penalty += penalty
 
         overall_score = max(0.0, 1.0 - (total_penalty / total_fields))
-        
-        # if overall_score < 0.5:
-        #     print(f"Expected: {expected_output}\nActual: {actual_output}\n\n")
-        
-        return overall_score, field_scores
+        return overall_score, field_scores, list_field_metrics
 
     def get_field_penalty(self, actual, expected):
         if actual == expected:
@@ -49,12 +50,8 @@ class Evaluator:
             return 1
         if actual in [None, "", []] and expected not in [None, "", []]:
             return 1
-        if isinstance(actual, list) and isinstance(expected, list):
-            result = self.compare_lists(actual, expected)
-            return result
         if isinstance(actual, str) and isinstance(expected, str):
-            result = 1 - SequenceMatcher(None, actual, expected).ratio()
-            return result
+            return 1 - SequenceMatcher(None, actual, expected).ratio()
         return 1
 
     def compare_lists(self, actual_list, expected_list):
@@ -62,13 +59,14 @@ class Evaluator:
         true_positives = len(actual_set & expected_set)
         false_positives = len(actual_set - expected_set)
         false_negatives = len(expected_set - actual_set)
-    
-        precision = true_positives / (true_positives + false_positives) if (true_positives + false_positives) > 0 else 0
-        recall = true_positives / (true_positives + false_negatives) if (true_positives + false_negatives) > 0 else 0
-    
-        f1_score = (2 * precision * recall) / (precision + recall) if (precision + recall) > 0 else 0
-        return f1_score
+        true_negatives = 0
 
+        return {
+            "true_positives": true_positives,
+            "false_positives": false_positives,
+            "false_negatives": false_negatives,
+            "true_negatives": true_negatives
+        }
 
 class PromptTesterObjectSimilarity(PromptTester):
     batch_size = 10
@@ -76,46 +74,38 @@ class PromptTesterObjectSimilarity(PromptTester):
         super().__init__(model_caller, input_data, expected_outputs, output_converter, input_converter, train_split)
         self.evaluator = evaluator
 
-    async def get_scores_for_solutions(self, prompts: list[str], progress, j) -> list[(float, dict)]:
-        # Start coroutines as tasks immediately
+    async def get_scores_for_solutions(self, prompts, progress, j):
         tasks = [asyncio.create_task(self.get_prompt_score(prompt, progress, j, i)) for i, prompt in enumerate(prompts)]
-    
-        # Await their results concurrently
         return await asyncio.gather(*tasks)
-    
+
     async def call_model_and_update_progress(self, prompt, inp_out, progress, sub_progress_task):
-        # Ensure call_model_cached is truly async
         res = await self.model.call_model_cached(
             "", prompt,
-            '\n'.join([json.dumps(self.input_converter.convert(inp[1]["PresentedName"]), indent=4) for inp in inp_out]),
-            temperature=0.0, max_length=2_000
+            '\n'.join([json.dumps(self.input_converter.convert(inp[1]["PresentedName"] if inp[1]["PresentedName"] is not None else ""), indent=4) for inp in inp_out]),
+            temperature=0.0, max_length=2000
         )
-    
         progress.update(sub_progress_task, advance=1)
         return res
-    
-    async def get_prompt_score(self, prompt, progress, j, i) -> (float, dict):
+
+    async def get_prompt_score(self, prompt, progress, j, i):
         total_score = 0.0
         field_score_sums = {}
         field_count = {}
-    
-        # Create a list of async tasks for batch processing
+        list_field_metrics_sums = {}
+        worst_score = 1
+        worst_out = None
+
         input_output_batches = list(self.batch_list(list(zip(self.input_data, self.expected_outputs)), self.batch_size))
-    
+
         sub_progress_task = progress.add_task(f"[red]Evaluating prompt {i} for search space {j}...", total=len(input_output_batches))
-    
-        # Start model calls as tasks immediately
+
         tasks = [
             asyncio.create_task(self.call_model_and_update_progress(prompt, inp_out, progress, sub_progress_task))
             for inp_out in input_output_batches
         ]
-    
-        # Await the results concurrently
+
         results = await asyncio.gather(*tasks)
 
-        worst_score = 1
-        worst_out = None
-        # Process results
         for result, inp_out in zip(results, input_output_batches):
             stripped_result = self.get_outer_curly_bracket_value(result)
             try:
@@ -123,28 +113,45 @@ class PromptTesterObjectSimilarity(PromptTester):
             except Exception as e:
                 print(f"Could not parse result: {e}")
                 continue
-    
+
             converted = self.output_converter.convert(result_obj)
-            
-            for (res, (i, expected)) in zip(converted, [inp for inp in inp_out]):
-                object_score, field_scores = self.evaluator.get_score_for_object(res, expected)
+
+            for (res, (i, expected)) in zip(converted, inp_out):
+                object_score, field_scores, list_field_metrics = self.evaluator.get_score_for_object(res, expected)
                 if object_score < worst_score:
                     worst_score = object_score
                     worst_out = expected
                 total_score += object_score
-    
+
                 for field, score in field_scores.items():
-                    if field not in field_score_sums:
-                        field_score_sums[field] = 0.0
-                        field_count[field] = 0
-                    field_score_sums[field] += score
-                    field_count[field] += 1
-    
+                    field_score_sums[field] = field_score_sums.get(field, 0) + score
+                    field_count[field] = field_count.get(field, 0) + 1
+
+                for field, metrics in list_field_metrics.items():
+                    if field not in list_field_metrics_sums:
+                        list_field_metrics_sums[field] = metrics
+                    else:
+                        for key in metrics:
+                            list_field_metrics_sums[field][key] += metrics[key]
+
         num_inputs = float(len(self.input_data))
-        average_score = total_score / num_inputs
-        average_field_scores = {field: field_score_sums[field] / field_count[field] for field in field_score_sums}
-    
-        return average_score, average_field_scores, worst_out
+        average_field_scores = {}
+
+        for field in field_score_sums:
+            average_field_scores[field] = field_score_sums[field] / field_count[field]
+
+        for field, metrics in list_field_metrics_sums.items():
+            tp, fp, fn = metrics["true_positives"], metrics["false_positives"], metrics["false_negatives"]
+            precision = tp / (tp + fp) if (tp + fp) > 0 else 0
+            recall = tp / (tp + fn) if (tp + fn) > 0 else 0
+            f1_score = (2 * precision * recall) / (precision + recall) if (precision + recall) > 0 else 0
+            average_field_scores[field] = f1_score
+
+        return (
+            (sum(average_field_scores.values()) / len(average_field_scores)) if (len(average_field_scores)> 0) else 0, 
+                average_field_scores, 
+                worst_out
+        )
 
     def batch_list(self, lst, batch_size):
         return [lst[i:i + batch_size] for i in range(0, len(lst), batch_size)]
