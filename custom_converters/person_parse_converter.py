@@ -6,10 +6,8 @@ from custom_converters.converter import Converter
 class PersonParseConverter(Converter):
     def convert(self, gpt: dict) -> list[dict]:
         if "NameParses" not in gpt:
-            print(f"NameParses not in {json.dumps(gpt)[:200]}")
             return []
-        if len(gpt["NameParses"]) == 0 or type(gpt["NameParses"][0]) != dict:
-            print(f"Incorrect format: {json.dumps(gpt)[:200]}")
+        if (len(gpt["NameParses"]) == 0) or (type(gpt["NameParses"]) != list) or (type(gpt["NameParses"][0]) != dict):
             return []
         return gpt["NameParses"]
 

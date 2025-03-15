@@ -4,5 +4,5 @@ from custom_converters.converter import Converter
 
 
 class PersonParseInputConverter(Converter):
-    def convert(self, name) -> dict:
+    def convert(self, name: str) -> dict:
         return {"Id":str(uuid.uuid4()), "PresentedName": name}
