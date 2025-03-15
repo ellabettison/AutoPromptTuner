@@ -35,15 +35,16 @@ class GenerateSolution:
         - Examples for clarity, if necessary.
         - Clear guidelines for handling optional parts of names (e.g., when there is no middle name, how to handle titles or suffixes).
         
-        Your task is to provide the best prompt that GPT can follow to parse a list of names according to the above criteria.
-        Do not include the input names, the input names will be provided by the user.
-        Surround each possible prompt with xml tags <prompt> </prompt>
-        
-        The prompt itself should be written in the following way:
+        The prompt itself should be written in the following style:
         {specification}
         
         Parsing task specification:
         {prompt}
+        
+        Your task is to provide the best prompt that GPT can follow to parse a list of names according to the above criteria.
+        ONLY include the prompt to be provided to the model, do NOT include the given style above.
+        Do not include the input names, the input names will be provided by the user.
+        Surround the generated prompt with xml tags <prompt> </prompt>
         """
 
     def extract_prompts(self, text: str) -> list[str]:
