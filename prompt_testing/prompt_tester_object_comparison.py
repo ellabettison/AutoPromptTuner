@@ -26,40 +26,41 @@ class Evaluator:
                 continue
             actual_value = actual_output.get(key)
             expected_value = expected_output.get(key)
-
-            if isinstance(actual_value, list) and isinstance(expected_value, list):
-                metrics = self.compare_lists(actual_value, expected_value)
-                list_field_metrics[key] = metrics
-            else:
-                penalty = self.get_field_penalty(actual_value, expected_value)
-                field_scores[key] = max(0.0, 1.0 - penalty)
-
-                if key in self.fields_weightings:
-                    penalty *= self.fields_weightings[key]
-                total_penalty += penalty
-
+            if not isinstance(expected_value, list):
+                if expected_value is None:
+                    expected_value = []
+                else:
+                    expected_value = [expected_value]
+            if not isinstance(actual_value, list):
+                if actual_value is None:
+                    actual_value = []
+                else:
+                    actual_value = [actual_value]
+            metrics = self.compare_lists(actual_value, expected_value)
+            list_field_metrics[key] = metrics
+            penalty = metrics["false_positives"] + metrics["false_negatives"]
+            total_penalty += penalty
+        
         overall_score = max(0.0, 1.0 - (total_penalty / total_fields))
         return overall_score, field_scores, list_field_metrics
 
-    def get_field_penalty(self, actual, expected):
-        if actual == expected:
-            return 0
-        if expected in [None, "", []] and actual in [None, "", []]:
-            return 0
-        if expected in [None, "", []] and actual not in [None, "", []]:
-            return 1
-        if actual in [None, "", []] and expected not in [None, "", []]:
-            return 1
-        if isinstance(actual, str) and isinstance(expected, str):
-            return 1 - SequenceMatcher(None, actual, expected).ratio()
-        return 1
-
     def compare_lists(self, actual_list, expected_list):
-        actual_set, expected_set = set(actual_list), set(expected_list)
-        true_positives = len(actual_set & expected_set)
-        false_positives = len(actual_set - expected_set)
-        false_negatives = len(expected_set - actual_set)
-        true_negatives = 0
+        try:
+            actual_set, expected_set = set([str(item) for item in actual_list]), set([str(item) for item in expected_list])
+            true_positives = len(actual_set & expected_set)
+            false_positives = len(actual_set - expected_set)
+            false_negatives = len(expected_set - actual_set)
+            true_negatives = 0
+        except Exception as e:
+            print("Exception:", e)
+            print("Actual list:", actual_list)
+            print("Expected list:", expected_list)
+            return {
+                "true_positives": 0,
+                "false_positives": 0,
+                "false_negatives": 1,
+                "true_negatives": 0
+            }
 
         return {
             "true_positives": true_positives,
@@ -82,7 +83,7 @@ class PromptTesterObjectSimilarity(PromptTester):
         res = await self.model.call_model_cached(
             "", prompt,
             '\n'.join([json.dumps(self.input_converter.convert(inp[1]["PresentedName"] if inp[1]["PresentedName"] is not None else ""), indent=4) for inp in inp_out]),
-            temperature=0.0, max_length=2000
+            temperature=0.0, max_length=5_000
         )
         progress.update(sub_progress_task, advance=1)
         return res
@@ -111,16 +112,29 @@ class PromptTesterObjectSimilarity(PromptTester):
             try:
                 result_obj = json.loads(stripped_result)
             except Exception as e:
+                # print()
                 print(f"Could not parse result: {e}")
+                # print(f"result: \n{stripped_result}\n{result}")
                 continue
 
             converted = self.output_converter.convert(result_obj)
 
             for (res, (i, expected)) in zip(converted, inp_out):
-                object_score, field_scores, list_field_metrics = self.evaluator.get_score_for_object(res, expected)
+                expected_converted = self.output_converter.reverse_convert_single_parse(expected)
+                if res is None:
+                    object_score = 0
+                    field_scores = {}
+                    list_field_metrics = {}
+                else:
+                    object_score, field_scores, list_field_metrics = self.evaluator.get_score_for_object(res, expected_converted)
                 if object_score < worst_score:
                     worst_score = object_score
-                    worst_out = expected
+                    worst_out = expected_converted
+                    print("actual:")
+                    print(res)
+                    print("expected_converted:")
+                    print(worst_out)
+                    print()
                 total_score += object_score
 
                 for field, score in field_scores.items():
@@ -148,9 +162,9 @@ class PromptTesterObjectSimilarity(PromptTester):
             average_field_scores[field] = f1_score
 
         return (
-            (sum(average_field_scores.values()) / len(average_field_scores)) if (len(average_field_scores)> 0) else 0, 
-                average_field_scores, 
-                worst_out
+            (sum(average_field_scores.values()) / len(average_field_scores)) if (len(average_field_scores)> 0) else 0,
+            average_field_scores,
+            worst_out
         )
 
     def batch_list(self, lst, batch_size):
@@ -163,6 +177,9 @@ class PromptTesterObjectSimilarity(PromptTester):
         inside_outer = False
         # Counter to track the nesting level of curly brackets
         brace_count = 0
+        
+        if s is None:
+            return result
 
         for char in s:
             if char == '{':

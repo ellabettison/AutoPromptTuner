@@ -4,8 +4,10 @@ import asyncio
 import importlib.util
 import itertools
 import json
+import random
 import sys
 
+from custom_converters.converter import Converter
 from map_elites import MAPElites
 from model_caller.gemini_caller import GeminiCaller
 from model_caller.gpt_caller import GPTCaller
@@ -61,15 +63,17 @@ def parse_args_and_run_map_elites():
     parser = argparse.ArgumentParser(description="Run a function with command-line arguments.")
     parser.add_argument("-f", "--fields_to_ignore", type=str, nargs="+", help="List of fields to ignore", default=[
         "FirstNameShortestDiminutives",
-        "Id",
-        "ClientId",
-        "TransliteratedName"
+        "TransliteratedName",
+        "Misc",
+        "IsNonLatin",
+        "PresentedName"
     ])
     parser.add_argument("-m", "--model", type=str, help="Model to use, from 'GPT' or 'Gemini'. Defaults to Gemini", default="Gemini")
     parser.add_argument("-w", "--weights", type=parse_dict, help="Fields to weight higher, formatted as a dictionary of string to float, e.g. {\"FirstName\":1.5}", default="""{                                                                                                                                                         "FamilyName": 2,
-    "FirstName": 2,
-    "FamilyNamePrefixesRemoved": 1.5,
-    "OtherGivenNames": 1.5,
+    "TopLevelBrand": 4,
+    "LowLevelBrand": 2,
+    "LegalSuffixes": 1.5,
+    "Id":0
     }""")
     parser.add_argument("-d", "--problem_definition", type=str, help="Name of base problem definition file, e.g. \"person_parsing.txt\"", default="person_parsing.txt",required=True)
     parser.add_argument("-i", "--input_data", type=str, help="Name of input data file within folder, e.g. \"person_names_input.json\"", default="person_names_input.json",required=True)
@@ -79,7 +83,7 @@ def parse_args_and_run_map_elites():
     parser.add_argument("-n", "--num_rounds", type=int, help="Number of rounds to iterate for", default=30)
     parser.add_argument("-s", "--min_spaces", type=int, help="Minimum number of search spaces which should have solutions, a larger number means a wider range of solutions", default=10)
     parser.add_argument("--input_converter", type=str, help="Name of input converter class file", default="person_parse_input_converter")
-    parser.add_argument("--output_converter", type=str, help="Name of output converter class file", default="person_parse_converter")
+    parser.add_argument("--output_converter", type=str, help="Name of output converter class file", default="org_parse_converter")
 
 
     args = parser.parse_args()
@@ -105,13 +109,14 @@ def parse_args_and_run_map_elites():
         "\n".join(f"{key}: {value}" for key, value in zip(categories.keys(), values))
         for values in itertools.product(*categories.values())
     ]
+    combinations = random.choices(combinations, k=min(len(combinations), 20))
 
-    output_converter = None
+    output_converter = Converter
     if args.output_converter:
         output_converter_file = "custom_converters/"+args.output_converter+".py"
         output_converter = load_class_from_file(output_converter_file, to_camel_case(args.output_converter))
 
-    input_converter = None
+    input_converter = Converter
     if args.input_converter:
         input_converter_file = "custom_converters/"+args.input_converter+".py"
         input_converter = load_class_from_file(input_converter_file, to_camel_case(args.input_converter))

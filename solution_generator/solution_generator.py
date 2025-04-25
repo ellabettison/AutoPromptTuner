@@ -73,6 +73,18 @@ Prompt to create variant for:
         """
         return solution_mutation_prompt
 
+    def get_solution_crossover_prompt(self, solution1: str, solution2: str) -> str:
+        solution_mutation_prompt = f"""
+Create a new prompt that is a crossover of the two given prompts. It should be composed of some parts of the first prompt, and some parts of the second prompt. Ensure the new prompt still makes sense and is correctly specified. Surround the prompt with xml tags <prompt> </prompt>
+        
+Prompt 1:
+{solution1}
+
+Prompt 2:
+{solution2}
+        """
+        return solution_mutation_prompt
+
     def get_search_space_of_solution_prompt(self, search_space_definitions: list[str], solution: str):
         prompt = f"""
         Of the given categories, which does the following prompt best fall under?
@@ -81,7 +93,7 @@ Prompt to create variant for:
         {solution}
         
         Categories:
-        {'\n'.join([f"{i}. {search_space_definitions[i]}" for i in range(len(search_space_definitions))])}
+        {'\n\n'.join([f"{i}. {search_space_definitions[i]}" for i in range(len(search_space_definitions))])}
         
         Category number of prompt:
         """
@@ -89,27 +101,34 @@ Prompt to create variant for:
 
 
     async def generate_random_solution(self) -> list[str]:
-        initial_solution = await self.model_caller.call_model(user_prompt=self.solution_generation_prompt + self.base_solution, chat_history="", system_prompt="", max_length=2_000)
+        initial_solution = await self.model_caller.call_model(user_prompt=self.solution_generation_prompt + self.base_solution, chat_history="", system_prompt="", max_length=5_000)
         prompts = self.extract_prompts(initial_solution)
         return prompts
 
     async def mutate_solution(self, solution: str, example: list[str]) -> list[str]:
         # print(f"\nMutating solution: {solution[:200]}...")
-        mutated_solution = await self.model_caller.call_model(user_prompt=self.get_solution_mutation_prompt(example) + solution, chat_history="", max_length=2_000)
+        mutated_solution = await self.model_caller.call_model(user_prompt=self.get_solution_mutation_prompt(example) + solution, chat_history="", max_length=5_000)
+        prompts = self.extract_prompts(mutated_solution)
+        # print(f"Mutated solution:\n{'...\n'.join([p[:200] for p in prompts])}\n")
+        return prompts
+
+    async def crossover_solutions(self, solution1: str, solution2: str) -> list[str]:
+        # print(f"\nMutating solution: {solution[:200]}...")
+        mutated_solution = await self.model_caller.call_model(user_prompt=self.get_solution_crossover_prompt(solution1, solution2), chat_history="", max_length=5_000)
         prompts = self.extract_prompts(mutated_solution)
         # print(f"Mutated solution:\n{'...\n'.join([p[:200] for p in prompts])}\n")
         return prompts
 
     async def generate_solution_for_search_space(self, search_space_definition: str) -> list[str]:
         # print(f"Generating solution for search space: {search_space_definition}")
-        solution = await self.model_caller.call_model(user_prompt=self.get_solution_generation_from_search_space_prompt(search_space_definition, self.base_solution), max_length=2_000)
+        solution = await self.model_caller.call_model(user_prompt=self.get_solution_generation_from_search_space_prompt(search_space_definition, self.base_solution), max_length=5_000)
         prompts = self.extract_prompts(solution)
         # print(f"Solution for search space:{search_space_definition}\nPrompts: {'...\n'.join([p[:200] for p in prompts])}...\n<fin>")
         return prompts
 
     async def get_search_space_of_solution(self, search_space_definitions: list[str], solution: str) -> str | None:
         prompt = self.get_search_space_of_solution_prompt(search_space_definitions, solution)
-        search_space_response = (await self.model_caller.call_model(user_prompt=prompt, chat_history="", max_length=10)).strip()
+        search_space_response = (await self.model_caller.call_model_cached(user_prompt=prompt, chat_history="", max_length=10)).strip()
         if not search_space_response.isnumeric() or int(search_space_response) >= len(search_space_definitions):
             print(f"Invalid search space response: {search_space_response}")
             return None
